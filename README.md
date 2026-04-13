@@ -57,37 +57,6 @@ After deploy:
 - Contract unit tests for core paths
 - Core pages: `/`, `/post-job`, `/job/[id]`
 
-## Planned Expansions
-
-- Dispute arbitration logic (stubbed in contract)
-- Dashboard/profile/admin feature implementations
-- Multi-milestone and tipping features
-- IPFS-based description persistence (localStorage used currently)
-
-## Open Issues to Contribute
-
-### Good First Issues
-
-- Add pagination to home job listing
-- Add copy-to-clipboard helpers for IDs and addresses
-- Show connected wallet XLM balance in header
-- Replace localStorage description persistence with IPFS integration
-- Add tests for `submit_work` edge cases
-
-### Medium Issues
-
-- Build `/dashboard` client/freelancer job views
-- Build `/profile/[address]` with on-chain history
-- Implement `extend_deadline` contract + UI
-- Implement `tip_freelancer` contract + UI
-- Add transaction history panel in `/job/[id]`
-
-### Hard Issues
-
-- Design and implement on-chain dispute resolution
-- Implement multi-milestone escrow flow
-- Add SEP-0031 based cross-border payment support
-- Design contract upgrade path and governance guardrails
 
 ## License
 
