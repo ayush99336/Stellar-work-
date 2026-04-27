@@ -40,12 +40,18 @@ export default function HomePage() {
     void refresh();
   }, []);
 
+  function getDescription(hash: string): string {
+    const stored = localStorage.getItem(`job-desc:${hash}`);
+    if (stored) return stored;
+    return "Description unavailable (posted from another device)";
+  }
+
   return (
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold">Open Jobs</h1>
 
-      {error && <p className="rounded-md bg-red-100 p-3 text-sm text-red-700">{error}</p>}
-      {loading && <p className="text-sm text-slate-600">Loading jobs...</p>}
+      {error && <p role="alert" className="rounded-md bg-red-100 p-3 text-sm text-red-700">{error}</p>}
+      {loading && <p role="status" aria-live="polite" className="text-sm text-slate-600">Loading jobs...</p>}
 
       {!loading && jobs.length === 0 && !error && (
         <p className="text-sm text-slate-600">No open jobs found.</p>
@@ -58,7 +64,10 @@ export default function HomePage() {
               <h2 className="text-lg font-medium hover:underline">Job #{id}</h2>
             </Link>
             <p className="mt-2 text-sm text-slate-700">{toXlm(job.amount)} XLM</p>
-            <p className="mt-1 text-xs text-slate-600">
+            <p className="mt-1 text-sm text-slate-700">
+              {getDescription(job.description_hash)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
               Hash: {job.description_hash.slice(0, 12)}...
             </p>
             <p className="mt-1 text-xs text-slate-600">
@@ -78,12 +87,17 @@ export default function HomePage() {
                     try {
                       await connectWallet();
                     } catch {
+                      setError("Failed to connect wallet. Is Freighter installed?");
                       return;
                     }
                     return;
                   }
-                  await acceptJob(wallet, String(id));
-                  await refresh();
+                  try {
+                    await acceptJob(wallet, String(id));
+                    await refresh();
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "Failed to accept job.");
+                  }
                 }}
               >
                 Accept Job

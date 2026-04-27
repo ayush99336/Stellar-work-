@@ -9,11 +9,17 @@ import { useEffect, useState } from "react";
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
-  const { wallet } = useWallet();
+  const { wallet, connectWallet } = useWallet();
   const [job, setJob] = useState<Job | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const load = async () => {
-    setJob(await getJob(id));
+    try {
+      setJob(await getJob(id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load job.");
+    }
   };
 
   useEffect(() => {
@@ -24,28 +30,54 @@ export default function JobDetailPage() {
   const isClient = wallet && job && wallet === job.client;
   const isFreelancer = wallet && job && wallet === job.freelancer;
 
+  function getDescription(hash: string): string {
+    const stored = localStorage.getItem(`job-desc:${hash}`);
+    if (stored) return stored;
+    return "Description unavailable (posted from another device)";
+  }
+
+  async function handleAction(action: () => Promise<unknown>) {
+    setError(null);
+    setStatusMsg(null);
+    if (!wallet) {
+      try {
+        await connectWallet();
+      } catch {
+        setError("Failed to connect wallet. Is Freighter installed?");
+      }
+      return;
+    }
+    try {
+      await action();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Transaction failed.");
+    }
+  }
+
   return (
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold">Job #{id}</h1>
 
-      {!job && <p className="text-sm text-slate-600">Loading...</p>}
+      {error && <p role="alert" className="rounded-md bg-red-100 p-3 text-sm text-red-700">{error}</p>}
+      {statusMsg && <p role="status" aria-live="polite" className="rounded-md bg-green-100 p-3 text-sm text-green-700">{statusMsg}</p>}
+
+      {!job && !error && <p role="status" aria-live="polite" className="text-sm text-slate-600">Loading...</p>}
       {job && (
         <article className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
           <p><strong>Status:</strong> {job.status}</p>
           <p><strong>Client:</strong> {job.client}</p>
           <p><strong>Freelancer:</strong> {job.freelancer ?? "Not assigned"}</p>
           <p><strong>Amount:</strong> {job.amount} stroops</p>
-          <p><strong>Description hash:</strong> {job.description_hash}</p>
+          <p><strong>Description:</strong> {getDescription(job.description_hash)}</p>
+          <p className="text-xs text-slate-500"><strong>Hash:</strong> {job.description_hash}</p>
           <p><strong>Deadline:</strong> {job.deadline === "0" ? "No deadline" : new Date(Number(job.deadline) * 1000).toLocaleString()}</p>
 
           <div className="mt-4 flex flex-wrap gap-2">
             {wallet && job.status === "Open" && (
               <button
                 className="rounded-md border border-slate-300 px-3 py-1.5"
-                onClick={async () => {
-                  await acceptJob(wallet, id);
-                  await load();
-                }}
+                onClick={() => handleAction(() => acceptJob(wallet, id))}
               >
                 Accept Job
               </button>
@@ -54,10 +86,7 @@ export default function JobDetailPage() {
             {isFreelancer && job.status === "InProgress" && (
               <button
                 className="rounded-md border border-slate-300 px-3 py-1.5"
-                onClick={async () => {
-                  await submitWork(wallet, id);
-                  await load();
-                }}
+                onClick={() => handleAction(() => submitWork(wallet, id))}
               >
                 Submit Work
               </button>
@@ -66,10 +95,7 @@ export default function JobDetailPage() {
             {isClient && job.status === "SubmittedForReview" && (
               <button
                 className="rounded-md border border-slate-300 px-3 py-1.5"
-                onClick={async () => {
-                  await approveWork(wallet, id);
-                  await load();
-                }}
+                onClick={() => handleAction(() => approveWork(wallet, id))}
               >
                 Approve Work
               </button>
@@ -78,10 +104,7 @@ export default function JobDetailPage() {
             {isClient && job.status === "Open" && (
               <button
                 className="rounded-md border border-slate-300 px-3 py-1.5"
-                onClick={async () => {
-                  await cancelJob(wallet, id);
-                  await load();
-                }}
+                onClick={() => handleAction(() => cancelJob(wallet, id))}
               >
                 Cancel Job
               </button>
