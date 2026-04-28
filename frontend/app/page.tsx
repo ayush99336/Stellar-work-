@@ -1,7 +1,9 @@
 "use client";
 
 import ErrorBanner from "@/components/ErrorBanner";
+import LoadingState from "@/components/LoadingState";
 import { acceptJob, getJob, getJobCount } from "@/lib/contract";
+import { getExplorerTxUrl } from "@/lib/stellar";
 import type { Job } from "@/lib/types";
 import { useWallet } from "@/lib/wallet-context";
 import Link from "next/link";
@@ -17,6 +19,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [latestTxHash, setLatestTxHash] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalJobs, setTotalJobs] = useState(0);
@@ -103,9 +106,19 @@ export default function HomePage() {
 
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
-      {loading && jobs.length === 0 && (
-        <p role="status" aria-live="polite" className="text-sm text-slate-600">
-          Loading jobs...
+      {loading && jobs.length === 0 && <LoadingState text="Loading jobs..." />}
+
+      {latestTxHash && (
+        <p className="text-sm text-slate-600">
+          Last transaction:{" "}
+          <a
+            href={getExplorerTxUrl(latestTxHash)}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-600 hover:underline"
+          >
+            {latestTxHash}
+          </a>
         </p>
       )}
 
@@ -160,7 +173,10 @@ export default function HomePage() {
 
                   setActionLoading(id);
                   try {
-                    await acceptJob(wallet, String(id));
+                    const result = await acceptJob(wallet, String(id));
+                    if (result.hash) {
+                      setLatestTxHash(result.hash);
+                    }
                     await refresh();
                   } catch (e) {
                     setError(
