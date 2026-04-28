@@ -7,6 +7,7 @@ use soroban_sdk::{
 
 const FEE_BPS: i128 = 250;
 const BPS_DENOMINATOR: i128 = 10_000;
+const MAX_REVISIONS: u32 = 3;
 
 const INSTANCE_LIFETIME_THRESHOLD: u32 = 17_280;
 const INSTANCE_BUMP_AMOUNT: u32 = 518_400;
@@ -36,6 +37,7 @@ pub struct Job {
     pub created_at: u64,
     pub deadline: u64,
     pub token: Address,
+    pub revision_count: u32,
 }
 
 #[contracttype]
@@ -62,6 +64,7 @@ pub enum Error {
     DeadlinePassed = 6,
     DeadlineNotExpired = 7,
     TokenNotAllowed = 8,
+    RevisionLimitReached = 9,
 }
 
 #[contract]
@@ -126,6 +129,7 @@ impl EscrowContract {
             created_at: e.ledger().timestamp(),
             deadline,
             token: token.clone(),
+            revision_count: 0,
         };
 
         set_job(&e, job_id, &job);
@@ -226,6 +230,31 @@ impl EscrowContract {
         e.events().publish(
             (Symbol::new(&e, "job_approved"),),
             (job_id, client, freelancer, payout),
+        );
+    }
+
+    pub fn reject_work(e: Env, client: Address, job_id: u64) {
+        let mut job = get_job_or_panic(&e, job_id);
+        client.require_auth();
+
+        if job.status != JobStatus::SubmittedForReview {
+            panic_with_error!(&e, Error::InvalidStatus);
+        }
+        if job.client != client {
+            panic_with_error!(&e, Error::Unauthorized);
+        }
+        if job.revision_count >= MAX_REVISIONS {
+            panic_with_error!(&e, Error::RevisionLimitReached);
+        }
+
+        job.status = JobStatus::InProgress;
+        job.revision_count += 1;
+        set_job(&e, job_id, &job);
+        bump_instance_ttl(&e);
+
+        e.events().publish(
+            (Symbol::new(&e, "job_rejected"),),
+            (job_id, client, job.revision_count),
         );
     }
 
@@ -646,6 +675,60 @@ mod test {
         let (env, client, _, user, _, native_token) = setup();
         let job_id = client.post_job(&user, &1_000_000i128, &hash(&env), &0u64, &native_token);
         client.approve_work(&user, &job_id);
+    }
+
+    #[test]
+    fn reject_work_happy_path_and_resubmit() {
+        let (env, client, _, user, freelancer, native_token) = setup();
+        let job_id = client.post_job(&user, &1_000_000i128, &hash(&env), &0u64, &native_token);
+        client.accept_job(&freelancer, &job_id);
+        client.submit_work(&freelancer, &job_id);
+
+        client.reject_work(&user, &job_id);
+        let rejected = client.get_job(&job_id);
+        assert_eq!(rejected.status, JobStatus::InProgress);
+        assert_eq!(rejected.revision_count, 1);
+
+        client.submit_work(&freelancer, &job_id);
+        let resubmitted = client.get_job(&job_id);
+        assert_eq!(resubmitted.status, JobStatus::SubmittedForReview);
+        assert_eq!(resubmitted.revision_count, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #2)")]
+    fn reject_work_wrong_caller_fails() {
+        let (env, client, _, user, freelancer, native_token) = setup();
+        let job_id = client.post_job(&user, &1_000_000i128, &hash(&env), &0u64, &native_token);
+        client.accept_job(&freelancer, &job_id);
+        client.submit_work(&freelancer, &job_id);
+
+        client.reject_work(&freelancer, &job_id);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #3)")]
+    fn reject_work_wrong_status_fails() {
+        let (env, client, _, user, freelancer, native_token) = setup();
+        let job_id = client.post_job(&user, &1_000_000i128, &hash(&env), &0u64, &native_token);
+        client.accept_job(&freelancer, &job_id);
+        client.reject_work(&user, &job_id);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #9)")]
+    fn reject_work_revision_limit_fails() {
+        let (env, client, _, user, freelancer, native_token) = setup();
+        let job_id = client.post_job(&user, &1_000_000i128, &hash(&env), &0u64, &native_token);
+        client.accept_job(&freelancer, &job_id);
+
+        for _ in 0..MAX_REVISIONS {
+            client.submit_work(&freelancer, &job_id);
+            client.reject_work(&user, &job_id);
+        }
+
+        client.submit_work(&freelancer, &job_id);
+        client.reject_work(&user, &job_id);
     }
 
     #[test]
