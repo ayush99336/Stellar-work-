@@ -2,6 +2,8 @@
 
 import ErrorBanner from "@/components/ErrorBanner";
 import LoadingState from "@/components/LoadingState";
+import EmptyState from "@/components/EmptyState";
+import SectionCard from "@/components/SectionCard";
 import { acceptJob, getJob, getJobCount } from "@/lib/contract";
 import { getExplorerTxUrl } from "@/lib/stellar";
 import type { Job } from "@/lib/types";
@@ -23,6 +25,7 @@ export default function HomePage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalJobs, setTotalJobs] = useState(0);
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalJobs / pageSize)),
@@ -54,7 +57,10 @@ export default function HomePage() {
       const idsToFetch = Array.from(
         { length: endId - startId + 1 },
         (_, i) => String(startId + i),
-      ).reverse();
+      );
+      if (sortOrder === "newest") {
+        idsToFetch.reverse();
+      }
 
       const results = await Promise.all(
         idsToFetch.map(async (id) => {
@@ -78,7 +84,7 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize]);
+  }, [page, pageSize, sortOrder]);
 
   useEffect(() => {
     void refresh();
@@ -123,8 +129,33 @@ export default function HomePage() {
       )}
 
       {!loading && jobs.length === 0 && !error && (
-        <p className="text-sm text-slate-600">No open jobs found.</p>
+        <EmptyState
+          title="No open jobs found"
+          description="New jobs will appear here as clients post them."
+        />
       )}
+
+      <SectionCard
+        title="Jobs Display"
+        description="Default sort is newest first."
+      >
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <label htmlFor="jobs-sort-order">Sort:</label>
+          <select
+            id="jobs-sort-order"
+            value={sortOrder}
+            onChange={(event) => {
+              setSortOrder(event.target.value as "newest" | "oldest");
+              setPage(1);
+            }}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1"
+            disabled={loading}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+        </div>
+      </SectionCard>
 
       <div className="grid gap-4 md:grid-cols-2">
         {jobs.map(({ id, job }) => (

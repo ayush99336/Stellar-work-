@@ -422,6 +422,20 @@ impl EscrowContract {
         load_admin(&e)
     }
 
+    pub fn transfer_admin(e: Env, caller: Address, new_admin: Address) {
+        caller.require_auth();
+        let current_admin = load_admin(&e);
+        if caller != current_admin {
+            panic_with_error!(&e, Error::Unauthorized);
+        }
+        e.storage().instance().set(&DataKey::Admin, &new_admin);
+        bump_instance_ttl(&e);
+        e.events().publish(
+            (Symbol::new(&e, "admin_transferred"),),
+            (caller, new_admin),
+        );
+    }
+
     pub fn get_job_count(e: Env) -> u64 {
         get_jobs_count(&e)
     }
@@ -1349,6 +1363,64 @@ mod test {
         let (_, client, admin, _, _, _) = setup();
         assert_eq!(client.get_admin(), admin);
     }
+
+    #[test]
+    fn transfer_admin_updates_admin() {
+        let (env, client, admin, _, _, _) = setup();
+        let new_admin = Address::generate(&env);
+        client.transfer_admin(&admin, &new_admin);
+        assert_eq!(client.get_admin(), new_admin);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #2)")]
+    fn transfer_admin_rejects_non_admin() {
+        let (env, client, _, _, _, _) = setup();
+        let caller = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+        client.transfer_admin(&caller, &new_admin);
+    }
+}
+#![no_std]
+
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, BytesN,
+    Env, Symbol,
+};
+
+const FEE_BPS: i128 = 250;
+const BPS_DENOMINATOR: i128 = 10_000;
+
+const INSTANCE_LIFETIME_THRESHOLD: u32 = 17_280;
+const INSTANCE_BUMP_AMOUNT: u32 = 518_400;
+const ACTIVE_JOB_LIFETIME_THRESHOLD: u32 = 17_280;
+const ACTIVE_JOB_BUMP_AMOUNT: u32 = 518_400;
+const ARCHIVAL_JOB_BUMP_AMOUNT: u32 = 120_960;
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum JobStatus {
+    Open,
+    InProgress,
+    SubmittedForReview,
+    Completed,
+    Cancelled,
+    Disputed,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Job {
+    pub client: Address,
+    pub freelancer: Option<Address>,
+    pub amount: i128,
+    pub description_hash: BytesN<32>,
+    pub status: JobStatus,
+    pub created_at: u64,
+    pub deadline: u64,
+    pub token: Address,
+    pub submitted_at: u64,
+}
 
     #[test]
     fn get_contract_version_is_deterministic() {
