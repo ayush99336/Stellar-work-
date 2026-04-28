@@ -421,6 +421,20 @@ impl EscrowContract {
         load_admin(&e)
     }
 
+    pub fn transfer_admin(e: Env, caller: Address, new_admin: Address) {
+        caller.require_auth();
+        let current_admin = load_admin(&e);
+        if caller != current_admin {
+            panic_with_error!(&e, Error::Unauthorized);
+        }
+        e.storage().instance().set(&DataKey::Admin, &new_admin);
+        bump_instance_ttl(&e);
+        e.events().publish(
+            (Symbol::new(&e, "admin_transferred"),),
+            (caller, new_admin),
+        );
+    }
+
     pub fn get_job_count(e: Env) -> u64 {
         get_jobs_count(&e)
     }
@@ -1339,6 +1353,23 @@ mod test {
     fn get_admin_public_view_returns_configured_admin() {
         let (_, client, admin, _, _, _) = setup();
         assert_eq!(client.get_admin(), admin);
+    }
+
+    #[test]
+    fn transfer_admin_updates_admin() {
+        let (env, client, admin, _, _, _) = setup();
+        let new_admin = Address::generate(&env);
+        client.transfer_admin(&admin, &new_admin);
+        assert_eq!(client.get_admin(), new_admin);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #2)")]
+    fn transfer_admin_rejects_non_admin() {
+        let (env, client, _, _, _, _) = setup();
+        let caller = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+        client.transfer_admin(&caller, &new_admin);
     }
 }
 #![no_std]
